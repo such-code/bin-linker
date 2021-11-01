@@ -1,0 +1,25 @@
+{
+  "name": "@such-code/bin-link",
+  "version": "1.0.0",
+  "description": "Simple binary linker to organize multi-project repository.",
+  "bin": "src/cli.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/such-code/bin-linker.git"
+  },
+  "keywords": [
+    "nodejs"
+  ],
+  "author": "Erik Podrez <erya14@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/such-code/bin-linker/issues"
+  },
+  "homepage": "https://github.com/such-code/bin-linker#readme",
+  "dependencies": {
+    "@lerna/create-symlink": "^4.0.0"
+  }
+}
