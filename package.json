@@ -2,7 +2,9 @@
   "name": "@such-code/bin-link",
   "version": "1.0.0",
   "description": "Simple binary linker to organize multi-project repository.",
-  "bin": "src/cli.js",
+  "bin": {
+    "bin-linker": "src/cli.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
