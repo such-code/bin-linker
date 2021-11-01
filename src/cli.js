@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 const path = require('path');
 const { createSymlink } = require('@lerna/create-symlink');
 const { lsDir, isDir, readFileAsJson, ensureDirectoryExistence, convertPathForWin, deleteThenWrite} = require('./utils');
