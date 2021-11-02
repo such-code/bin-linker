@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 
 /**
  * @param {string} $path
@@ -168,7 +169,17 @@ function ensureDirectoryExistence($dirPath) {
         fs.stat($dirPath, ($err, ignore) => {
             if ($err) {
                 // Do not exist
-                makeDir($dirPath).then($resolve);
+                makeDir($dirPath)
+                    .then($resolve)
+                    .catch($err => {
+                        // Try to create directory recursively
+                        const parentDir = path.dirname($dirPath);
+                        if (!!parentDir || parentDir === '/' || /\w:\\/.test(parentDir)) {
+                            return ensureDirectoryExistence(parentDir)
+                                .then(() => makeDir($dirPath));
+                        }
+                        throw $err;
+                    });
             } else {
                 $resolve($dirPath);
             }

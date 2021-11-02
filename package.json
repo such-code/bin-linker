@@ -4,7 +4,7 @@
   "private": false,
   "description": "Simple binary linker to organize multi-project repository.",
   "bin": {
-    "bin-linker": "./bin/bin-linker"
+    "bin-link": "./bin/bin-link"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

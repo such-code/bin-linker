@@ -5,6 +5,8 @@ const { lsDir, isDir, readFileAsJson, ensureDirectoryExistence, convertPathForWi
 const [,, ...argv] = process.argv;
 const arguments = argvToObject(argv);
 
+const rootDir = process.cwd();
+
 const isWindows = process.platform === 'win32';
 const useSymlinks = arguments.hasOwnProperty('useLink') && typeof arguments.useLink === 'boolean'
     ? arguments.useLink
@@ -102,12 +104,12 @@ function generateUnixScriptFor($path) {
         'exit $ret' + newLine;
 }
 
-lsDir('./')
+lsDir(rootDir)
     .then($items => {
         return Promise
             .all(
                 $items.map($item => {
-                    const item = path.resolve('./', $item);
+                    const item = path.resolve(rootDir, $item);
                     return isDir(item)
                         .then($ => $ ? item : null)
                 })
@@ -122,8 +124,8 @@ lsDir('./')
             .then($dirsWithPackage => $dirsWithPackage.filter($ => $ !== null));
     })
     .then($projects => {
-        console.log('Child projects found: ' + $projects.map($ => path.relative(__dirname, $)).join(', '));
-        readFileAsJson('./package.json')
+        console.log('Child projects found: ' + $projects.map($ => path.relative(rootDir, $)).join(', '));
+        readFileAsJson(path.resolve(rootDir, './package.json'))
             .then($projectPackage => {
                 const dependencies = {
                     ...$projectPackage.dependencies,
@@ -136,7 +138,7 @@ lsDir('./')
                         Object
                             .keys(dependencies)
                             .map($dependencyName => {
-                                const packageRoot = path.resolve(__dirname, `./node_modules/${$dependencyName}`);
+                                const packageRoot = path.resolve(rootDir, `./node_modules/${$dependencyName}`);
                                 return readFileAsJson(`${packageRoot}/package.json`)
                                     .then($dependencyPackage => {
                                         if ('bin' in $dependencyPackage) {
