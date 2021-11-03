@@ -104,6 +104,33 @@ function generateUnixScriptFor($path) {
         'exit $ret' + newLine;
 }
 
+/**
+ * @typedef { {package: string, binName: string, binPath: string } } BinDependency
+ */
+
+/**
+ *
+ * @param { Array<BinDependency> } $deps
+ * @return { string }
+ */
+function generateBinDependenciesMessage($deps) {
+    let packages = {};
+    for (let dep of $deps) {
+        packages = {
+            ...packages,
+            [dep.package]: Array.isArray(packages[dep.package])
+                ? packages[dep.package].concat(dep.binName)
+                : [dep.binName],
+        };
+    }
+
+    return Object.keys(packages)
+        .reduce(($acc, $packageName) => {
+            return $acc.concat(`${$packageName}[${packages[$packageName].join(', ')}]`);
+        }, [])
+        .join(', ');
+}
+
 lsDir(rootDir)
     .then($items => {
         return Promise
@@ -125,7 +152,7 @@ lsDir(rootDir)
     })
     .then($projects => {
         console.log('Child projects found: ' + $projects.map($ => path.relative(rootDir, $)).join(', '));
-        readFileAsJson(path.resolve(rootDir, './package.json'))
+        return readFileAsJson(path.resolve(rootDir, './package.json'))
             .then($projectPackage => {
                 const dependencies = {
                     ...$projectPackage.dependencies,
@@ -137,47 +164,86 @@ lsDir(rootDir)
                     .all(
                         Object
                             .keys(dependencies)
-                            .map($dependencyName => {
-                                const packageRoot = path.resolve(rootDir, `./node_modules/${$dependencyName}`);
-                                return readFileAsJson(`${packageRoot}/package.json`)
-                                    .then($dependencyPackage => {
-                                        if ('bin' in $dependencyPackage) {
-                                            if (typeof $dependencyPackage.bin === 'string') {
-                                                return [ {
-                                                    name: $dependencyPackage.name,
-                                                    target: path.join(packageRoot, $dependencyPackage.bin),
-                                                } ];
-                                            } else if (typeof $dependencyPackage.bin === 'object') {
-                                                const bins = Object.keys($dependencyPackage.bin);
-                                                if (bins.length > 0) {
-                                                    return bins.map($ => ({
-                                                        name: $,
-                                                        target: path.join(packageRoot, $dependencyPackage.bin[$]),
-                                                    }))
+                            .map(
+                                /**
+                                 * @param { string } $dependencyName
+                                 * @return { Promise<Array<BinDependency> | null> }
+                                 */
+                                $dependencyName => {
+                                    const packageRoot = path.resolve(rootDir, `./node_modules/${$dependencyName}`);
+                                    return readFileAsJson(`${packageRoot}/package.json`)
+                                        .then(
+                                            /**
+                                             * @param { [bin]: string } $dependencyPackage
+                                             * @return { Array<BinDependency> | null }
+                                             **/
+                                            $dependencyPackage => {
+                                                if ('bin' in $dependencyPackage) {
+                                                    if (typeof $dependencyPackage.bin === 'string') {
+                                                        return [ {
+                                                            package: $dependencyName,
+                                                            binName: $dependencyPackage.bin,
+                                                            binPath: path.join(packageRoot, $dependencyPackage.bin),
+                                                        } ];
+                                                    } else if (typeof $dependencyPackage.bin === 'object') {
+                                                        const bins = Object.keys($dependencyPackage.bin);
+                                                        if (bins.length > 0) {
+                                                            return bins.map($ => ({
+                                                                package: $dependencyName,
+                                                                binName: $,
+                                                                binPath: path.join(packageRoot, $dependencyPackage.bin[$]),
+                                                            }))
+                                                        }
+                                                    }
                                                 }
+                                                return null;
                                             }
-                                        }
-                                        return null;
-                                    })
-                                    .catch(() => null);
-                            })
+                                        );
+                                }
+                            )
+                    )
+                    .then(
+                        /**
+                         * @param { Array<Array<BinDependency> | null> } $bins
+                         * @return { Array<BinDependency> }
+                         */
+                        $bins => {
+                            return $bins.reduce(
+                                /**
+                                 * @param { Array<BinDependency> }$acc
+                                 * @param { Array<BinDependency> | null } $current
+                                 * @return { Array<BinDependency> }
+                                 */
+                                ($acc, $current) => {
+                                    if ($current !== null) {
+                                        return $acc.concat($current)
+                                    }
+                                    return $acc;
+                                },
+                                []
+                            );
+                        }
                     )
                     .then($bins => {
-                        return $bins.filter($ => $ !== null);
-                    })
-                    .then($bins => {
-                        return $bins.reduce(($acc, $current) => $acc.concat($current), [])
-                    })
-                    .then($bins => {
+                        console.log(`Direct dependencies with "bin" property found: ${generateBinDependenciesMessage($bins)}.`);
+
                         return Promise.all(
                             $projects.map($project => {
                                 const projectBinPath = path.join($project, 'node_modules/.bin');
+
                                 return ensureDirectoryExistence(projectBinPath)
                                     .then(() => {
-                                        return Promise.all($bins.map($bin => {
-                                            const linkPath = path.join(projectBinPath, $bin.name);
+                                        console.log(`Creating links for subproject "${$project}":`);
+
+                                        return Promise.all($bins.map(($bin, $index) => {
+                                            const linkPath = path.join(projectBinPath, $bin.binName);
+                                            const lineEnding = $index < $bins.length - 1 ? ';' : '.';
+
                                             if (!useSymlinks) {
-                                                const realBinRelativeToFake = path.relative(path.dirname(linkPath), $bin.target);
+                                                const realBinRelativeToFake = path.relative(path.dirname(linkPath), $bin.binPath);
+
+                                                console.log(`\t - writing "bin" script at "${linkPath}"${lineEnding}`);
+
                                                 // Make shell executable
                                                 const shellCmdPromise = deleteThenWrite(linkPath, generateUnixScriptFor(realBinRelativeToFake), {mode: 0o755});
                                                 if (createCommands) {
@@ -189,15 +255,19 @@ lsDir(rootDir)
                                                 return shellCmdPromise;
                                             }
 
+                                            console.log(`\t - creating symlink "${linkPath}"${lineEnding}`);
+
                                             // create link for project
-                                            return createSymlink($bin.target, linkPath);
+                                            return createSymlink($bin.binPath, linkPath);
                                         }));
                                     })
                             })
                         );
                     });
-            })
-
+            });
+    })
+    .then(() => {
+        console.log('Done!');
     })
     .catch($ => {
         console.error($);

@@ -84,7 +84,6 @@ function writeFile($filePath, $data, $options) {
  */
 function deleteFile($path) {
     return new Promise(($resolve, $reject) => {
-        console.log('Deleting file ' + $path);
         fs.unlink($path, $err => {
             if ($err) {
                 $reject($err);
@@ -165,20 +164,22 @@ function makeDir($dirPath) {
  * @return {Promise.<string>}
  */
 function ensureDirectoryExistence($dirPath) {
-    return new Promise(($resolve, ignore) => {
+    return new Promise(($resolve, $reject) => {
         fs.stat($dirPath, ($err, ignore) => {
             if ($err) {
                 // Do not exist
                 makeDir($dirPath)
                     .then($resolve)
                     .catch($err => {
-                        // Try to create directory recursively
+                        // Try to create parent directory recursively
                         const parentDir = path.dirname($dirPath);
-                        if (!!parentDir || parentDir === '/' || /\w:\\/.test(parentDir)) {
+                        if (!!parentDir || parentDir === '/' || /^\w:\\?/.test(parentDir)) {
                             return ensureDirectoryExistence(parentDir)
-                                .then(() => makeDir($dirPath));
+                                .then(() => makeDir($dirPath))
+                                .then($resolve)
+                                .catch($reject);
                         }
-                        throw $err;
+                        return Promise.reject($err);
                     });
             } else {
                 $resolve($dirPath);
