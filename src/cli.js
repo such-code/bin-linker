@@ -15,6 +15,9 @@ const createCommands = arguments.hasOwnProperty('createCmd') && typeof arguments
     ? arguments.createCmd
     : isWindows;
 const newLine = isWindows ? '\r\n' : '\n';
+const forceChildBinaries = arguments.hasOwnProperty('forceBinaries') && typeof arguments.forceBinaries === 'boolean'
+    ? arguments.forceBinaries
+    : false;
 
 function normalizeValue($value) {
     if (/^(true|false)$/.test($value)) {
@@ -109,6 +112,10 @@ function generateUnixScriptFor($path) {
  */
 
 /**
+ * @typedef { {package: string, path: string, dependencies: Array<string>} } ProjectDependency
+ */
+
+/**
  *
  * @param { Array<BinDependency> } $deps
  * @return { string }
@@ -143,15 +150,51 @@ lsDir(rootDir)
             )
             .then($dirs => $dirs.filter($ => $ !== null));
     })
-    .then($dirs => {
-        return Promise
-            .all(
-                $dirs.map($dir => lsDir($dir).then($ => $.indexOf('package.json') > -1 ? $dir : null))
-            )
-            .then($dirsWithPackage => $dirsWithPackage.filter($ => $ !== null));
-    })
+    .then(
+        /**
+         * @param { Array<string> } $dirs
+         * @return { Promise<Array<ProjectDependency>> }
+         */
+        $dirs => {
+            return Promise
+                .all(
+                    $dirs.map($dir => {
+                        return lsDir($dir).then($dirList => {
+                            if ($dirList.indexOf('package.json') > -1) {
+                                const packagePath = path.resolve($dir, 'package.json');
+                                return readFileAsJson(packagePath)
+                                    .then($projectPackage => {
+                                        const dependencies = {
+                                            ...$projectPackage.dependencies,
+                                            ...$projectPackage.devDependencies,
+                                            ...$projectPackage.localDependencies,
+                                        }
+
+                                        /** @var { ProjectDependency } */
+                                        return {
+                                            package: path.relative(rootDir, $dir),
+                                            path: $dir,
+                                            dependencies: Object.keys(dependencies),
+                                        }
+                                    });
+                            }
+                            return null;
+                        });
+                    })
+                )
+                .then(
+                    /**
+                     * @param { Array<ProjectDependency | null> } $dirsWithPackage
+                     * @return { Array<ProjectDependency> }
+                     */
+                    $dirsWithPackage => {
+                        return $dirsWithPackage.filter($ => $ !== null);
+                    }
+                );
+        }
+    )
     .then($projects => {
-        console.log('Child projects found: ' + $projects.map($ => path.relative(rootDir, $)).join(', '));
+        console.log('Child projects found: ' + $projects.map($ => $.package).join(', '));
         return readFileAsJson(path.resolve(rootDir, './package.json'))
             .then($projectPackage => {
                 const dependencies = {
@@ -174,7 +217,7 @@ lsDir(rootDir)
                                     return readFileAsJson(`${packageRoot}/package.json`)
                                         .then(
                                             /**
-                                             * @param { [bin]: string } $dependencyPackage
+                                             * @param { { [bin]: string } } $dependencyPackage
                                              * @return { Array<BinDependency> | null }
                                              **/
                                             $dependencyPackage => {
@@ -228,14 +271,19 @@ lsDir(rootDir)
                         console.log(`Direct dependencies with "bin" property found: ${generateBinDependenciesMessage($bins)}.`);
 
                         return Promise.all(
-                            $projects.map($project => {
-                                const projectBinPath = path.join($project, 'node_modules/.bin');
+                            $projects.map(/** @param { ProjectDependency } $project */$project => {
+                                const projectBinPath = path.join($project.path, 'node_modules/.bin');
 
                                 return ensureDirectoryExistence(projectBinPath)
                                     .then(() => {
-                                        console.log(`Creating links for subproject "${$project}":`);
+                                        console.log(`Creating links for the subproject "${$project.package}":`);
 
                                         return Promise.all($bins.map(($bin, $index) => {
+                                            if (!forceChildBinaries && $project.dependencies.indexOf($bin.package) > -1) {
+                                                console.log(`\t - skipping binary creation for "${$bin.package}" package because the subproject has a same direct dependency.`);
+                                                return;
+                                            }
+
                                             const linkPath = path.join(projectBinPath, $bin.binName);
                                             const lineEnding = $index < $bins.length - 1 ? ';' : '.';
 
