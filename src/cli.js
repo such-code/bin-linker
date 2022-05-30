@@ -217,7 +217,7 @@ lsDir(rootDir)
                                     return readFileAsJson(`${packageRoot}/package.json`)
                                         .then(
                                             /**
-                                             * @param { { [bin]: string } } $dependencyPackage
+                                             * @param { { name: string, [bin]: string } } $dependencyPackage
                                              * @return { Array<BinDependency> | null }
                                              **/
                                             $dependencyPackage => {
@@ -225,7 +225,7 @@ lsDir(rootDir)
                                                     if (typeof $dependencyPackage.bin === 'string') {
                                                         return [ {
                                                             package: $dependencyName,
-                                                            binName: $dependencyPackage.bin,
+                                                            binName: $dependencyPackage.name.split('/').pop(),
                                                             binPath: path.join(packageRoot, $dependencyPackage.bin),
                                                         } ];
                                                     } else if (typeof $dependencyPackage.bin === 'object') {
